@@ -13,7 +13,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Log in to GHCR
-        run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract branch name and commit SHA
         id: extract
@@ -29,41 +33,27 @@ jobs:
           echo "🌿 Branch: $BRANCH"
           echo "🔖 Commit SHA: $SHORT_SHA"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and Push Docker Image
-        run: |
-          IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
-          IMAGE=$(echo $IMAGE | tr '[:upper:]' '[:lower:]')
-          BRANCH=${{ steps.extract.outputs.branch }}
-          SHORT_SHA=${{ steps.extract.outputs.short_sha }}
-          RUN_NUMBER=${{ github.run_number }}
-
-          echo "📦 Building image for $BRANCH branch"
-          docker build -t $IMAGE:$BRANCH .
-
-          echo "🔖 Creating additional tags"
-          # Branch-specific tag (for auto-deployment)
-          docker tag $IMAGE:$BRANCH $IMAGE:$BRANCH
-
-          # SHA-based tag (for rollbacks)
-          docker tag $IMAGE:$BRANCH $IMAGE:$BRANCH-$SHORT_SHA
-
-          # Run number tag (for tracking)
-          docker tag $IMAGE:$BRANCH $IMAGE:$BRANCH-$RUN_NUMBER
-
-          echo "🚀 Pushing all tags to GHCR"
-          docker push $IMAGE:$BRANCH
-          docker push $IMAGE:$BRANCH-$SHORT_SHA
-          docker push $IMAGE:$BRANCH-$RUN_NUMBER
-
-          echo "✅ Successfully pushed:"
-          echo "  📌 $IMAGE:$BRANCH (auto-deploy tag)"
-          echo "  🔄 $IMAGE:$BRANCH-$SHORT_SHA (rollback tag)"
-          echo "  📊 $IMAGE:$BRANCH-$RUN_NUMBER (tracking tag)"
+        uses: docker/build-push-action@v5
+        id: build
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ steps.extract.outputs.branch }}
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ steps.extract.outputs.branch }}-${{ steps.extract.outputs.short_sha }}
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ steps.extract.outputs.branch }}-${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Deployment Summary
         run: |
           BRANCH=${{ steps.extract.outputs.branch }}
           SHORT_SHA=${{ steps.extract.outputs.short_sha }}
+          IMAGE_BASE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
           echo "🎯 Deployment Summary:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -71,11 +61,15 @@ jobs:
           echo "🔖 Commit: $SHORT_SHA"
           echo "🚀 Auto-deploy: Your $BRANCH environment will update automatically!"
 
+          echo "📦 Pushed Images:"
+          echo "  📌 $IMAGE_BASE:$BRANCH (auto-deploy tag)"
+          echo "  🔄 $IMAGE_BASE:$BRANCH-$SHORT_SHA (rollback tag)"
+          echo "  📊 $IMAGE_BASE:$BRANCH-${{ github.run_number }} (tracking tag)"
+
           if [ "$BRANCH" = "staging" ]; then
             echo "🌐 URL: http://ibf-quasar-devobs.stg.localhost:8080/"
           elif [ "$BRANCH" = "production" ]; then
             echo "🌐 URL: http://ibf-quasar-devobs.prod.localhost:8080/"
           fi
 
-          echo "🔄 Rollback tag: $BRANCH-$SHORT_SHA"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
