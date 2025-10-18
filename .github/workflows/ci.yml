@@ -30,8 +30,13 @@ jobs:
           SHORT_SHA=${GITHUB_SHA::7}
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
+          # Create lowercase image name
+          IMAGE_NAME=$(echo "${{ github.repository_owner }}/${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+
           echo "🌿 Branch: $BRANCH"
           echo "🔖 Commit SHA: $SHORT_SHA"
+          echo "📦 Image: ghcr.io/$IMAGE_NAME"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -43,9 +48,9 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ steps.extract.outputs.branch }}
-            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ steps.extract.outputs.branch }}-${{ steps.extract.outputs.short_sha }}
-            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ steps.extract.outputs.branch }}-${{ github.run_number }}
+            ghcr.io/${{ steps.extract.outputs.image_name }}:${{ steps.extract.outputs.branch }}
+            ghcr.io/${{ steps.extract.outputs.image_name }}:${{ steps.extract.outputs.branch }}-${{ steps.extract.outputs.short_sha }}
+            ghcr.io/${{ steps.extract.outputs.image_name }}:${{ steps.extract.outputs.branch }}-${{ github.run_number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -53,7 +58,7 @@ jobs:
         run: |
           BRANCH=${{ steps.extract.outputs.branch }}
           SHORT_SHA=${{ steps.extract.outputs.short_sha }}
-          IMAGE_BASE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+          IMAGE_BASE=ghcr.io/${{ steps.extract.outputs.image_name }}
 
           echo "🎯 Deployment Summary:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
