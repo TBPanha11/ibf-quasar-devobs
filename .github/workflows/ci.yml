@@ -1,7 +1,7 @@
 name: Build and Push Quasar App
 on:
   push:
-    branches: [development, staging]
+    branches: [production, staging]
 
 jobs:
   build:
@@ -15,20 +15,67 @@ jobs:
       - name: Log in to GHCR
         run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
+      - name: Extract branch name and commit SHA
+        id: extract
+        run: |
+          # Get branch name (staging or production)
+          BRANCH=${GITHUB_REF#refs/heads/}
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+          # Get short commit SHA for rollback tags
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+          echo "🌿 Branch: $BRANCH"
+          echo "🔖 Commit SHA: $SHORT_SHA"
+
       - name: Build and Push Docker Image
         run: |
           IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
           IMAGE=$(echo $IMAGE | tr '[:upper:]' '[:lower:]')
-          TAG=${{ github.run_number }}
+          BRANCH=${{ steps.extract.outputs.branch }}
+          SHORT_SHA=${{ steps.extract.outputs.short_sha }}
+          RUN_NUMBER=${{ github.run_number }}
 
-          echo "📦 Building image $IMAGE:$TAG"
-          docker build -t $IMAGE:$TAG .
+          echo "📦 Building image for $BRANCH branch"
+          docker build -t $IMAGE:$BRANCH .
 
-          echo "🔖 Tagging image as latest"
-          docker tag $IMAGE:$TAG $IMAGE:latest
+          echo "🔖 Creating additional tags"
+          # Branch-specific tag (for auto-deployment)
+          docker tag $IMAGE:$BRANCH $IMAGE:$BRANCH
 
-          echo "🚀 Pushing both versioned and latest tags to GHCR"
-          docker push $IMAGE:$TAG
-          docker push $IMAGE:latest
+          # SHA-based tag (for rollbacks)
+          docker tag $IMAGE:$BRANCH $IMAGE:$BRANCH-$SHORT_SHA
 
-          echo "✅ Pushed: $IMAGE:$TAG and $IMAGE:latest"
+          # Run number tag (for tracking)
+          docker tag $IMAGE:$BRANCH $IMAGE:$BRANCH-$RUN_NUMBER
+
+          echo "🚀 Pushing all tags to GHCR"
+          docker push $IMAGE:$BRANCH
+          docker push $IMAGE:$BRANCH-$SHORT_SHA
+          docker push $IMAGE:$BRANCH-$RUN_NUMBER
+
+          echo "✅ Successfully pushed:"
+          echo "  📌 $IMAGE:$BRANCH (auto-deploy tag)"
+          echo "  🔄 $IMAGE:$BRANCH-$SHORT_SHA (rollback tag)"
+          echo "  📊 $IMAGE:$BRANCH-$RUN_NUMBER (tracking tag)"
+
+      - name: Deployment Summary
+        run: |
+          BRANCH=${{ steps.extract.outputs.branch }}
+          SHORT_SHA=${{ steps.extract.outputs.short_sha }}
+
+          echo "🎯 Deployment Summary:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🌿 Branch: $BRANCH"
+          echo "🔖 Commit: $SHORT_SHA"
+          echo "🚀 Auto-deploy: Your $BRANCH environment will update automatically!"
+
+          if [ "$BRANCH" = "staging" ]; then
+            echo "🌐 URL: http://ibf-quasar-devobs.stg.localhost:8080/"
+          elif [ "$BRANCH" = "production" ]; then
+            echo "🌐 URL: http://ibf-quasar-devobs.prod.localhost:8080/"
+          fi
+
+          echo "🔄 Rollback tag: $BRANCH-$SHORT_SHA"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
