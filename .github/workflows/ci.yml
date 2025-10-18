@@ -20,6 +20,15 @@ jobs:
           IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
           IMAGE=$(echo $IMAGE | tr '[:upper:]' '[:lower:]')
           TAG=${{ github.run_number }}
+
+          echo "📦 Building image $IMAGE:$TAG"
           docker build -t $IMAGE:$TAG .
+
+          echo "🔖 Tagging image as latest"
+          docker tag $IMAGE:$TAG $IMAGE:latest
+
+          echo "🚀 Pushing both versioned and latest tags to GHCR"
           docker push $IMAGE:$TAG
           docker push $IMAGE:latest
+
+          echo "✅ Pushed: $IMAGE:$TAG and $IMAGE:latest"
