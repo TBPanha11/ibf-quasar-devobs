@@ -1,0 +1,91 @@
+name: Auto Deploy Staging
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Quasar App"] # Must match your existing build workflow name
+    types: [completed]
+    branches: [staging]
+
+jobs:
+  auto-deploy-staging:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v4
+        with:
+          repository: TBPanha11/ibf-cloudlab-platform
+          token: ${{ secrets.GITOPS_PAT }} # Personal Access Token with repo access
+          ref: main
+
+      - name: Get Commit Hash
+        id: commit
+        run: |
+          # Get the short commit hash from the workflow that triggered this
+          COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Deploying staging-${SHORT_SHA}"
+
+      - name: Update Staging Image Tag
+        run: |
+          SHORT_SHA="${{ steps.commit.outputs.short_sha }}"
+
+          # Update staging imageTag in the unified ApplicationSet
+          # Use awk to find and replace only in the staging section
+          awk -v sha="${SHORT_SHA}" '
+            /environment: staging/ { in_staging=1 }
+            /environment: production/ { in_staging=0 }
+            in_staging && /imageTag: staging-/ {
+              sub(/imageTag: staging-[^"]*/, "imageTag: staging-" sha)
+            }
+            { print }
+          ' gitops-control-plane/argocd/unified-applicationset.yaml > temp.yaml
+
+          mv temp.yaml gitops-control-plane/argocd/unified-applicationset.yaml
+
+          # Verify the change was made
+          if grep -A 15 "environment: staging" gitops-control-plane/argocd/unified-applicationset.yaml | grep -q "imageTag: staging-${SHORT_SHA}"; then
+            echo "✅ Successfully updated staging tag to staging-${SHORT_SHA}"
+          else
+            echo "❌ Failed to update staging tag"
+            cat gitops-control-plane/argocd/unified-applicationset.yaml
+            exit 1
+          fi
+
+      - name: Commit and Push Changes
+        run: |
+          SHORT_SHA="${{ steps.commit.outputs.short_sha }}"
+
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
+          git add gitops-control-plane/argocd/unified-applicationset.yaml
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "⚠️ No changes to commit - tag might already be up to date"
+            exit 0
+          fi
+
+          git commit -m "auto-deploy(staging): staging-${SHORT_SHA}" \
+                     -m "Automated deployment triggered by successful build" \
+                     -m "Source commit: ${{ github.event.workflow_run.head_sha }}" \
+                     -m "Workflow: ${{ github.event.workflow_run.name }}" \
+                     -m "Branch: staging"
+
+          git push origin main
+          echo "✅ Changes pushed successfully"
+
+      - name: Deployment Summary
+        run: |
+          SHORT_SHA="${{ steps.commit.outputs.short_sha }}"
+          echo "🚀 Auto-Deployment Triggered"
+          echo "================================"
+          echo "Environment: staging"
+          echo "Image Tag: staging-${SHORT_SHA}"
+          echo "GitOps Repo: Updated unified-applicationset.yaml"
+          echo ""
+          echo "ArgoCD will automatically sync the changes within 3 minutes"
+          echo "Monitor deployment: kubectl get application ibf-quasar-devobs-staging -n argocd"
