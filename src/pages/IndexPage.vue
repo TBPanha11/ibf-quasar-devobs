@@ -1,7 +1,7 @@
 <template>
   <q-page class="flex flex-center">
     <div>
-      <h3>Production Page - v1.4</h3>
+      <h3>Production Page - v1.5</h3>
       <p>Last updated: {{ new Date().toLocaleDateString() }}</p>
       <img
         alt="Quasar logo"
