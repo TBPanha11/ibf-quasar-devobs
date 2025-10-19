@@ -1,31 +1,31 @@
-# Multi-stage Dockerfile for Quasar Application
-# Optimized for AMD64 builds
+# Use multi-platform base image with Node 20
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build
 
-# --- Build Stage ---
-FROM node:20-alpine AS build
+# Set build arguments
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
 
 WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+RUN npm ci
+
+# Copy source code
 COPY . .
 
-# Clean npm install and build
-RUN npm ci --no-audit --no-fund && \
-    npx quasar build
+# Build the Quasar app
+RUN npm run build
 
-# --- Serve Stage ---
-FROM nginx:alpine
+# Production stage - use multi-platform nginx
+FROM --platform=$TARGETPLATFORM nginx:alpine
 
-# Copy built application
+# Copy built app
 COPY --from=build /app/dist/spa /usr/share/nginx/html
 
-# Simple nginx config for SPA
-RUN echo 'server { \
-    listen 80; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
+# Copy nginx config if you have one
+# COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]
