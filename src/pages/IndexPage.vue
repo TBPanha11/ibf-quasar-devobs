@@ -1,7 +1,7 @@
 <template>
   <q-page class="flex flex-center">
     <div>
-      <h3>Staging Page - v1.6 - Auto Deploy Test! 🚀</h3>
+      <h3>Staging Page - v1.7 - Testing Again!</h3>
       <p>Last updated: {{ new Date().toLocaleDateString() }}</p>
       <img
         alt="Quasar logo"
